@@ -56,17 +56,64 @@ function isUserSignedIn() {
 // Saves a new message on the Firebase DB.
 function saveMessage(messageText) {
   // TODO 7: Push a new message to Firebase.
+  return firebase.firestore().collection('messages').add({
+    name: getUserName(),
+    text: messageText,
+    profilePicUrl: getProfilePicUrl(),
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(function(error) {
+    console.log('Error writing new message to database', error);
+  });
 }
 
 // Loads chat messages history and listens for upcoming ones.
 function loadMessages() {
   // TODO 8: Load and listens for new messages.
+  var query = firebase.firestore()
+                  .collection('messages')
+                  .orderBy('timestamp','desc')
+                  .limit(12);
+
+  query.onSnapshot(function(snapshot){
+    snapshot.docChanges().forEach(function(change){
+      if ( change.type === 'removed' ) {
+        deleteMessage(change.doc.id);
+      } else {
+        var message = change.doc.data();
+        displayMessage(change.doc.id, message.timestamp, message.name, 
+                        message.text, message.profilePicUrl, message.imageUrl);
+      }
+    });
+  });
 }
 
 // Saves a new message containing an image in Firebase.
 // This first saves the image in Firebase storage.
 function saveImageMessage(file) {
   // TODO 9: Posts a new image as a message.
+
+  //1. we add a message with the loading icon, which will get updated with the shared image when it's ready
+  firebase.firestore().collection('messages').add({
+    name: getUserName(),
+    imageUrl: LOADING_IMAGE_URL,
+    profilePicUrl: getProfilePicUrl(),
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(function(messageRef){
+    // 2. upload image to cloud storage
+    var filePath = firebase.auth().currentUser.uid + "/" + messageRef.id + "/" + file.name;
+    return firebase.storage().ref(filePath).put(file).then(function(fileSnapshot) {
+      // 3 generate a public URL for the image's URL
+      return fileSnapshot.ref.getDownloadURL().then((url)=> {
+        // 4. update chat placeholder image with new URL
+        return messageRef.update({
+          imageUrl: url,
+          storageUrl: fileSnapshot.metadata.fullPath
+        });
+      });
+    });
+  }).catch(function(error) {
+    console.error('There was an error uploading file to Cloud Storage', error);
+  })
 }
 
 // Saves the messaging device token to the datastore.
